@@ -1,0 +1,445 @@
+
+            <!doctype html>
+            <html lang="vi">
+              <head>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <title>SafeWeather – Hệ thống cảnh báo thời tiết</title>
+                <link rel="stylesheet" href="main.css" />
+                <!-- Leaflet -->
+                <link
+                  rel="stylesheet"
+                  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                />
+                <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                <link
+                  href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Exo+2:wght@300;400;500;600&display=swap"
+                  rel="stylesheet"
+                />
+                <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                <style>
+                  /* CSS bổ sung cho Chatbot Widget nổi */
+                  .ai-widget-btn {
+                    position: fixed; bottom: 25px; right: 25px; width: 60px; height: 60px;
+                    background: linear-gradient(135deg, #00d4ff, #007bb8);
+                    border-radius: 50%; border: 2px solid #fff;
+                    box-shadow: 0 0 20px rgba(0, 212, 255, 0.6); z-index: 9998;
+                    cursor: pointer; font-size: 32px; display: flex;
+                    align-items: center; justify-content: center; transition: transform 0.3s;
+                  }
+                  .ai-widget-btn:hover { transform: scale(1.1); }
+                  
+                  .chatbot-container.floating-chat {
+                    position: fixed !important; bottom: 100px; right: 25px;
+                    width: 320px; height: 450px; z-index: 9999; display: none;
+                    flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+                    border: 1px solid #00d4ff; background: #0b1628; border-radius: 12px;
+                  }
+                  /* CSS cho Mini Game */
+                  .game-card { text-align: center; padding: 20px; }
+                  .game-start-view, .game-result-view { padding: 20px; }
+                  .game-score-big { font-size: 3rem; font-weight: 800; color: #00d4ff; margin: 10px 0; }
+                  .game-question-text { font-size: 1.1rem; margin-bottom: 20px; min-height: 50px; }
+                  .game-options { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+                  .game-opt-btn {
+                    background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+                    color: var(--text-main); padding: 15px; border-radius: 8px; cursor: pointer;
+                    transition: 0.2s; text-align: left;
+                  }
+                  .game-opt-btn:hover { background: rgba(0, 212, 255, 0.1); border-color: #00d4ff; }
+                  .game-opt-btn.correct { background: rgba(0, 230, 118, 0.2) !important; border-color: #00e676 !important; }
+                  .game-opt-btn.wrong { background: rgba(255, 61, 61, 0.2) !important; border-color: #ff3d3d !important; opacity: 0.6; }
+                  .game-progress { height: 6px; background: #1a2f50; border-radius: 3px; margin-bottom: 20px; overflow: hidden; }
+                  .game-progress-bar { height: 100%; background: #00d4ff; width: 0%; transition: 0.3s; }
+                  @media (max-width: 600px) { .game-options { grid-template-columns: 1fr; } }
+                </style>
+              </head>
+              <body>
+                <!-- EMERGENCY OVERLAY -->
+                <div id="emergency-overlay" class="emergency-overlay hidden">
+                  <div class="emergency-box">
+                    <div class="emergency-icon">⚠</div>
+                    <h2 id="emergency-title">CẢNH BÁO THỜI TIẾT NGUY HIỂM</h2>
+                    <p id="emergency-msg">Khu vực của bạn đang có thời tiết cực đoan.</p>
+                    <div class="emergency-actions">
+                      <button onclick="openSurvivalFromAlert()" class="btn-emergency-guide">🚨 Xem hướng dẫn sinh tồn</button>
+                      <button onclick="closeEmergency()" class="btn-emergency-close">✕ Đóng</button>
+                    </div>
+                  </div>
+                </div>
+            
+                <!-- SURVIVAL MODAL -->
+                <div id="survival-modal" class="survival-modal hidden">
+                  <div class="survival-modal-content">
+                    <button class="modal-close" onclick="closeSurvivalModal()">✕</button>
+                    <h2>🆘 Hướng dẫn Sinh tồn</h2>
+                    <div class="survival-tabs">
+                      <button class="stab active" onclick="showSurvivalGuide('bao', this)">🌀 Bão</button>
+                      <button class="stab" onclick="showSurvivalGuide('lu', this)">🌊 Lũ</button>
+                      <button class="stab" onclick="showSurvivalGuide('set', this)">⚡ Sét</button>
+                      <button class="stab" onclick="showSurvivalGuide('dongdat', this)">🌍 Động đất</button>
+                      <button class="stab" onclick="showSurvivalGuide('nangnong', this)">🔥 Nắng nóng</button>
+                    </div>
+                    <div id="survival-content" class="survival-guide-content"></div>
+                  </div>
+                </div>
+            
+                <!-- HEADER -->
+                <header class="site-header">
+                  <div class="header-inner">
+                    <div class="logo">
+                      <span class="logo-icon">🛡</span><span class="logo-text">Safe<span class="logo-accent">Weather</span></span>
+                    </div>
+                    <nav class="main-nav">
+                      <button class="nav-btn active" data-tab="dashboard" onclick="switchTab('dashboard', this)"><span class="nav-icon">🌡</span><span>Dashboard</span></button>
+                      <button class="nav-btn" data-tab="forecast" onclick="switchTab('forecast', this)"><span class="nav-icon">📅</span><span>Dự báo</span></button>
+                      <button class="nav-btn" data-tab="map" onclick="switchTab('map', this)"><span class="nav-icon">🗺</span><span>Bản đồ</span></button>
+                      <button class="nav-btn" data-tab="alerts" onclick="switchTab('alerts', this)"><span class="nav-icon">🔔</span><span>Cảnh báo</span><span id="alert-badge" class="badge hidden">!</span></button>
+                      <button class="nav-btn" data-tab="survival" onclick="switchTab('survival', this)"><span class="nav-icon">🆘</span><span>Sinh tồn</span></button>
+                      <button class="nav-btn" data-tab="family" onclick="switchTab('family', this)"><span class="nav-icon">👨‍👩‍👧</span><span>Gia đình</span></button>
+                    </nav>
+                    <div class="header-right">
+                      <div class="live-clock" id="live-clock">--:--:--</div>
+                      <div class="location-badge"><span>📍</span><span id="city-name">Đang xác định...</span></div>
+                    </div>
+                  </div>
+                </header>
+            
+                <main class="main-content">
+                  <!-- ========== DASHBOARD ========== -->
+                  <section id="tab-dashboard" class="tab-section active">
+                    <div class="status-bar">
+                      <div class="status-item" id="status-safety"><span class="status-dot safe"></span><span>Trạng thái: An toàn</span></div>
+                      <div class="status-item"><span>🕐</span><span id="last-update">Chưa cập nhật</span></div>
+                      <div class="status-item dual-source-badge"><span class="pulse-dot"></span><span>Dual API Active</span></div>
+                      <button class="btn-refresh" onclick="fetchWeather()">↻ Làm mới</button>
+                    </div>
+            
+                    <div class="db-row1">
+                      <div class="db-left">
+                        <div class="card weather-main-card">
+                          <div class="card-header">Thời tiết hiện tại</div>
+                          <div class="weather-main-body">
+                            <div class="weather-icon-big" id="weather-icon-big">🌤</div>
+                            <div class="weather-desc" id="weather-desc">Đang tải...</div>
+                            <div class="temp-display"><span id="temp-main">--</span><span class="temp-unit">°C</span></div>
+                            <div class="feels-like">Cảm giác như <span id="feels-like">--</span>°C</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="db-right">
+                        <div class="windy-card card">
+                          <div class="windy-header">
+                            <div class="windy-title">
+                              <span class="windy-live-text">WINDY LIVE MAP</span>
+                            </div>
+                            <div class="windy-layers">
+                              <button class="wlayer active" data-overlay="wind" onclick="switchWindyLayer('wind', this)">💨 Gió</button>
+                              <button class="wlayer" data-overlay="rain" onclick="switchWindyLayer('rain', this)">🌧 Mưa</button>
+                              <button class="wlayer" data-overlay="temp" onclick="switchWindyLayer('temp', this)">🌡 Nhiệt</button>
+                            </div>
+                          </div>
+                          <div class="windy-frame-wrap">
+                            <iframe id="windy-iframe" src="" frameborder="0" style="width:100%;height:100%"></iframe>
+                            <div class="windy-loading" id="windy-loading">Đang tải bản đồ...</div>
+                          </div>
+                          <div class="windy-footer">
+                             <button onclick="locateMe()" class="btn-locate-me" id="btn-locate-me"><span class="locate-icon">📍</span><span>Vị trí của tôi</span></button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+            
+                    <div class="stats-row">
+                      <div class="card stat-card"><div class="stat-label">Độ ẩm</div><div class="stat-value" id="humidity">--%</div><div class="stat-bar"><div class="stat-bar-fill" id="humidity-bar" style="width: 0%"></div></div></div>
+                      <div class="card stat-card"><div class="stat-label">Gió</div><div class="stat-value" id="wind-speed">-- km/h</div><div class="stat-sub" id="wind-dir">--</div></div>
+                      <div class="card stat-card"><div class="stat-label">Tầm nhìn</div><div class="stat-value" id="visibility">-- km</div></div>
+                      <div class="card stat-card"><div class="stat-label">Áp suất</div><div class="stat-value" id="pressure">-- hPa</div></div>
+                      <div class="card stat-card"><div class="stat-label">Bình minh</div><div class="stat-value" id="sunrise">--:--</div></div>
+                      <div class="card stat-card"><div class="stat-label">Hoàng hôn</div><div class="stat-value" id="sunset">--:--</div></div>
+                    </div>
+            
+                    <div class="db-row2">
+                      <div class="card alert-panel" id="alert-panel">
+                        <div class="card-header">⚡ Cảnh báo hiện tại</div>
+                        <div id="alert-list"><div class="no-alert">✅ An toàn</div></div>
+                      </div>
+                      <div class="card my-status-card">
+                        <div class="card-header">📡 Cập nhật trạng thái của tôi</div>
+                        <div class="status-buttons">
+                          <button class="status-btn safe-btn" onclick="updateMyStatus('safe')">✅ An toàn</button>
+                          <button class="status-btn danger-btn" onclick="updateMyStatus('danger')">🚨 Nguy hiểm</button>
+                          <button class="status-btn help-btn" onclick="updateMyStatus('help')">🆘 Cần trợ giúp</button>
+                        </div>
+                        <div id="my-status-display" class="my-status-display"><span class="status-dot safe"></span> Trạng thái: Chưa cập nhật</div>
+                      </div>
+                    </div>
+                  </section>
+            
+                  <!-- ========== FORECAST ========== -->
+                  <section id="tab-forecast" class="tab-section hidden">
+                    <div class="fc-header"><div class="fc-title"><span>📅</span><span>Dự báo thời tiết</span></div><span class="fc-updated" id="fc-updated-time">--</span></div>
+                    <div class="fc-row1">
+                      <div class="card fc-chart-card">
+                        <div class="fc-card-header"><span>📈 Biểu đồ 24 giờ tới</span></div>
+                        <div class="fc-chart-wrap"><canvas id="hourly-chart"></canvas></div>
+                      </div>
+                      <div class="card fc-today-card">
+                        <div class="fc-card-header">☀️ Hôm nay</div>
+                        <div class="fc-today-body">
+                          <div class="fc-today-icon" id="fc-today-icon">🌤</div>
+                          <div class="fc-today-desc" id="fc-today-desc">--</div>
+                          <div class="fc-now-block"><span class="fc-now-val" id="fc-now-temp-val">--</span>°C</div>
+                          <div class="fc-minmax-row">
+                            <span class="fc-minmax-val hot" id="fc-today-max">--°</span> / <span class="fc-minmax-val cold" id="fc-today-min">--°</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="card fc-hourly-card"><div class="fc-card-header">⏱ Từng giờ</div><div id="hourly-list" class="fc-hourly-scroll"></div></div>
+                    <div class="card fc-daily-card"><div class="fc-card-header">📆 Dự báo 8 ngày</div><div id="forecast-table" class="fc-daily-grid"></div></div>
+                  </section>
+            
+                  <!-- ========== MAP ========== -->
+                  <section id="tab-map" class="tab-section hidden">
+                    <div class="map-page-header">
+                      <div class="map-page-title"><span>🛰</span><span>Bản đồ & Vị trí</span></div>
+                      <div class="map-page-meta"><span class="map-coord-badge" id="map-coord-badge">📍 --</span></div>
+                    </div>
+                    <div class="map-layout">
+                      <div class="map-side-panel">
+                        <div class="card map-info-card">
+                          <div class="map-info-header">📍 Vị trí của tôi</div>
+                          <div class="map-my-location">
+                            <div class="map-loc-road" id="map-loc-road">--</div>
+                            <div class="map-loc-district" id="map-loc-district">--</div>
+                            <div class="map-loc-coords" id="map-loc-coords">---, ---</div>
+                          </div>
+                          <button onclick="centerMap()" class="btn-map-locate"><span>📍</span> Về vị trí của tôi</button>
+                        </div>
+                        <div class="card map-info-card">
+                          <div class="map-info-header">🗂 Lớp bản đồ</div>
+                          <div class="map-layer-btns">
+                            <button class="map-layer-btn active" onclick="changeBaseLayer('osm');setActiveLayerBtn(this);"><span>🗺</span> OpenStreetMap</button>
+                            <button class="map-layer-btn" onclick="changeBaseLayer('satellite');setActiveLayerBtn(this);"><span>🛰</span> Vệ tinh</button>
+                          </div>
+                          <div class="map-weather-toggle">
+                            <button onclick="toggleWeatherLayer()" class="map-wt-btn" id="layer-toggle"><span class="map-wt-dot off" id="weather-dot"></span><span id="layer-toggle-text">Mưa: Tắt</span></button>
+                          </div>
+                        </div>
+                        <!-- NEW: MEDICAL SEARCH CARD -->
+                        <div class="card map-info-card">
+                          <div class="map-info-header">🏥 Y tế quanh đây (10km)</div>
+                          <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 8px;">Tìm bệnh viện, trạm y tế, nhà thuốc gần vị trí của bạn.</div>
+                          <button onclick="findNearbyHospitals()" class="btn-find-hospital" id="btn-find-hospital">
+                            <span>🏥</span> Tìm cơ sở y tế
+                          </button>
+                          <!-- NEW: HOSPITAL LIST CONTAINER -->
+                          <div id="hospital-list-container" class="hospital-list-box hidden">
+                            <div class="hosp-list-header">Kết quả tìm kiếm (<span id="hosp-count">0</span>)</div>
+                            <div id="hospital-list-content" class="hosp-list-content"></div>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="map-main">
+                        <div id="leaflet-map" class="leaflet-map-new" style="height: 580px"></div>
+                      </div>
+                    </div>
+                  </section>
+            
+                  <!-- ========== ALERTS ========== -->
+                  <section id="tab-alerts" class="tab-section hidden">
+                    <div class="section-title">🔔 Hệ thống cảnh báo</div>
+                    <div class="alert-level-card card">
+                      <div class="card-header">Mức độ cảnh báo</div>
+                      <div class="alert-levels">
+                        <div class="level-item level-green active-level" id="level-safe">AN TOÀN</div>
+                        <div class="level-item level-yellow" id="level-caution">CHÚ Ý</div>
+                        <div class="level-item level-orange" id="level-warning">CẢNH BÁO</div>
+                        <div class="level-item level-red" id="level-danger">NGUY HIỂM</div>
+                      </div>
+                    </div>
+                    <div class="card"><div class="card-header">📋 Nhật ký</div><div id="alert-log" class="alert-log"></div></div>
+                    <div class="card">
+                      <div class="card-header">⚙ Cài đặt thông báo</div>
+                      <div class="notif-settings">
+                        <label class="toggle-label"
+                          ><input type="checkbox" id="notif-push" checked /><span
+                            class="toggle"
+                          ></span
+                          ><span>Push Notification</span></label
+                        >
+                        <label class="toggle-label"
+                          ><input type="checkbox" id="notif-sound" checked /><span
+                            class="toggle"
+                          ></span
+                          ><span>Âm thanh cảnh báo</span></label
+                        >
+                        <div class="threshold-setting">
+                          <label>Ngưỡng cảnh báo gió (km/h): <strong id="wind-threshold-val">50</strong></label>
+                          <input type="range" min="20" max="150" value="50" id="wind-threshold" oninput="document.getElementById('wind-threshold-val').textContent = this.value">
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+            
+                  <!-- ========== SURVIVAL ========== -->
+                  <section id="tab-survival" class="tab-section hidden">
+                    <div class="section-title">🆘 Hướng dẫn sinh tồn</div>
+                    <div class="survival-grid">
+                      <div class="card survival-card" onclick="quickSurvival('bao')"><div class="survival-card-icon">🌀</div><div class="survival-card-title">Bão</div></div>
+                      <div class="card survival-card" onclick="quickSurvival('lu')"><div class="survival-card-icon">🌊</div><div class="survival-card-title">Lũ lụt</div></div>
+                      <div class="card survival-card" onclick="quickSurvival('set')"><div class="survival-card-icon">⚡</div><div class="survival-card-title">Sét đánh</div></div>
+                      <div class="card survival-card" onclick="quickSurvival('dongdat')"><div class="survival-card-icon">🌍</div><div class="survival-card-title">Động đất</div></div>
+                      <div class="card survival-card" onclick="quickSurvival('nangnong')"><div class="survival-card-icon">🔥</div><div class="survival-card-title">Nắng nóng</div></div>
+                    </div>
+                    <div class="card">
+                      <div class="card-header">🎒 Checklist túi đồ khẩn cấp</div>
+                      <div class="checklist">
+                        <label class="check-item"><input type="checkbox" /><span>💧 Nước uống</span></label>
+                        <label class="check-item"><input type="checkbox" /><span>🍱 Thức ăn khô</span></label>
+                        <label class="check-item"><input type="checkbox" /><span>🔦 Đèn pin</span></label>
+                        <label class="check-item"><input type="checkbox" /><span>🏥 Thuốc</span></label>
+                      </div>
+                      <div class="checklist-progress"><div class="progress-bar"><div class="progress-fill" id="checklist-fill" style="width: 0%"></div></div><span id="checklist-count">0/4</span></div>
+                    </div>
+                    
+                    <!-- MINI GAME (Merged from v3) -->
+                    <div class="card game-card">
+                      <div class="card-header">🎮 Thử thách kiến thức Sinh tồn</div>
+                      <div id="game-start-view" class="game-start-view">
+                        <div style="font-size: 40px; margin-bottom: 10px">🏆</div>
+                        <p>Kiểm tra kiến thức ứng phó thiên tai.</p>
+                        <button class="btn-see-guide" style="width: auto; padding: 10px 30px; margin-top: 15px" onclick="startGame()">Bắt đầu</button>
+                      </div>
+                      <div id="game-play-view" class="hidden">
+                        <div class="game-progress"><div id="game-progress-bar" class="game-progress-bar"></div></div>
+                        <div class="game-question-text" id="game-question">...</div>
+                        <div class="game-options" id="game-options"></div>
+                      </div>
+                      <div id="game-result-view" class="game-result-view hidden">
+                        <h3>Kết quả</h3>
+                        <div class="game-score-big" id="game-final-score">0/5</div>
+                        <p id="game-msg"></p>
+                        <button class="btn-see-guide" style="width: auto; padding: 10px 30px; margin-top: 15px" onclick="startGame()">Chơi lại</button>
+                      </div>
+                    </div>
+                  </section>
+            
+                  <!-- ========== FAMILY (MERGED FROM v4) ========== -->
+                  <section id="tab-family" class="tab-section hidden">
+                    <div class="section-title">👨‍👩‍👧 Mạng lưới gia đình</div>
+                    <!-- PROFILE -->
+                    <div class="card fb-profile-card">
+                      <div class="fb-profile-left">
+                        <div class="fb-avatar" id="my-emoji">😊</div>
+                        <div class="fb-profile-info">
+                          <div class="fb-name-row"><span id="fb-my-name">User</span><button class="fb-edit-name" onclick="fbEditName()">✏</button></div>
+                          <div class="fb-id-row"><span class="fb-id-value" id="my-friend-id-box">...</span><button class="fb-id-copy" onclick="copyMyId()">📋</button></div>
+                          <div id="fb-status" class="fb-status-text">Connecting...</div>
+                        </div>
+                      </div>
+                      <div class="fb-sharing-right">
+                        <button onclick="startSharing()" class="btn-fb-share start" id="btn-share-start">📡 Chia sẻ vị trí</button>
+                        <button onclick="stopSharing()" class="btn-fb-share stop hidden" id="btn-share-stop">⛔ Dừng chia sẻ</button>
+                      </div>
+                    </div>
+                    <!-- ADD FRIEND -->
+                    <div class="card">
+                      <div class="card-header">➕ Thêm bạn bè</div>
+                      <div class="fb-add-friend">
+                        <input type="text" id="add-friend-input" placeholder="Nhập Friend ID" class="fb-input" onkeydown="if(event.key==='Enter') fbSendRequest();"/>
+                        <button class="fb-add-btn" onclick="fbSendRequest()">Gửi →</button>
+                      </div>
+                      <div id="add-friend-msg" class="fb-msg"></div>
+                    </div>
+                    <!-- REQUESTS -->
+                    <div class="card" id="card-pending" style="display:none"><div class="card-header">📬 Lời mời <span class="fr-badge" id="pending-badge"></span></div><div id="friend-requests-pending"></div></div>
+                    <div class="card" id="card-sent" style="display:none"><div class="card-header">📤 Đã gửi</div><div id="friend-requests-sent"></div></div>
+                    <!-- FRIENDS LIST -->
+                    <div class="card">
+                      <div class="card-header">👥 Bạn bè <span class="fr-count" id="friends-count">0</span></div>
+                      <div class="family-grid" id="friends-accepted"></div>
+                    </div>
+                    <!-- EMERGENCY NUMBERS -->
+                    <div class="card">
+                      <div class="card-header">📞 Số điện thoại khẩn cấp</div>
+                      <div class="emergency-numbers">
+                        <div class="emg-num">
+                          <span class="emg-icon">🚒</span><span class="emg-name">Cứu hỏa</span><a href="tel:114" class="emg-tel">114</a>
+                        </div>
+                        <div class="emg-num">
+                          <span class="emg-icon">🚑</span><span class="emg-name">Cứu thương</span><a href="tel:115" class="emg-tel">115</a>
+                        </div>
+                        <div class="emg-num">
+                          <span class="emg-icon">👮</span><span class="emg-name">Công an</span><a href="tel:113" class="emg-tel">113</a>
+                        </div>
+                        <div class="emg-num">
+                          <span class="emg-icon">⛑</span><span class="emg-name">Cứu hộ thiên tai</span><a href="tel:1800599928" class="emg-tel">1800 599 928</a>
+                        </div>
+                        <div class="emg-num">
+                          <span class="emg-icon">🏥</span><span class="emg-name">Đường dây y tế</span><a href="tel:19001119" class="emg-tel">1900 1119</a>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </main>
+            
+                <footer class="site-footer">
+                  <div>🛡 SafeWeather v4.0 Completed</div>
+                </footer>
+                
+                <!-- CHATBOT WIDGET (Merged from v3) -->
+                <button class="ai-widget-btn" onclick="toggleChatbot()" title="Chat với AI">🤖</button>
+                <div id="ai-chatbot" class="card chatbot-container floating-chat">
+                    <div style="position: absolute; top: 10px; right: 10px; cursor: pointer; z-index:10" onclick="toggleChatbot()">❌</div>
+                    <select id="ai-style" style="background:var(--bg-card2);color:white;border:1px solid var(--border);border-radius:4px;padding:5px;margin-right:25px;">
+                      <option value="serious">Nghiêm túc</option>
+                      <option value="genz">Vui vẻ (Gen Z)</option>
+                    </select>
+                    <div class="card-header">🛡 Trợ lý AI (Python/Flask)</div>
+                    <div id="chat-content" class="chat-content" style="flex:1;overflow-y:auto;padding:10px;">
+                      <div class="ai-msg">Xin chào! Tôi là trợ lý AI (Gemini).</div>
+                    </div>
+                    <form class="chat-input-area" onsubmit="event.preventDefault(); askAI('planning')">
+                      <input type="text" id="user-query" placeholder="Hỏi AI..." autocomplete="off" />
+                      <button type="submit">Gửi</button>
+                    </form>
+                </div>
+            
+                <!-- CHAT WINDOW (Merged from v4) -->
+                <button class="chat-fab hidden" id="chat-fab" onclick="toggleChatWindow()">💬<span class="chat-fab-badge hidden" id="chat-total-badge">0</span></button>
+                <div class="chat-window hidden" id="chat-window">
+                    <div class="chat-view" id="chat-view-list">
+                        <div class="chat-header">💬 Tin nhắn <button class="chat-header-btn" onclick="showCreateGroup()">👥 Nhóm mới</button><button class="chat-header-btn" onclick="toggleChatWindow()">✕</button></div>
+                        <div class="chat-tabs">
+                            <button class="chat-tab active" id="tab-dm" onclick="switchChatTab('dm')">Cá nhân</button>
+                            <button class="chat-tab" id="tab-grp" onclick="switchChatTab('group')">Nhóm</button>
+                        </div>
+                        <div class="chat-conv-list" id="chat-conv-list"></div>
+                        <div class="chat-conv-list hidden" id="chat-group-list"></div>
+                    </div>
+                    <!-- (Các view chat khác như v4 gốc, rút gọn cho ngắn, nhưng cần có DOM đầy đủ trong thực tế) -->
+                    <div class="chat-view hidden" id="chat-view-convo">
+                         <div class="chat-header"><button onclick="showChatList()">‹</button><div id="chat-h-name">--</div><button onclick="toggleChatWindow()">✕</button></div>
+                         <div class="chat-messages" id="chat-messages"></div>
+                         <div class="chat-input-area">
+                             <input type="text" class="chat-input" id="chat-input" placeholder="..." onkeydown="if(event.key==='Enter') chatSend()"/>
+                             <button onclick="chatSend()">➤</button>
+                         </div>
+                    </div>
+                    <div class="chat-view hidden" id="chat-view-create-group">
+                         <div class="chat-header"><button onclick="showChatList()">‹</button> Tạo nhóm</div>
+                         <div style="padding:10px"><input id="grp-name-input" class="chat-input" placeholder="Tên nhóm"/><div id="grp-friend-select"></div><button onclick="createGroup()" class="btn-fb-share start" style="width:100%;margin-top:10px">Tạo</button></div>
+                    </div>
+                    <div class="chat-view hidden" id="chat-view-members">
+                         <div class="chat-header"><button onclick="showGroupChat()">‹</button> Thành viên</div>
+                         <div class="chat-conv-list" id="group-members-list"></div>
+                         <div style="padding:10px"><button onclick="leaveGroup()" class="btn-fb-share stop" style="width:100%">Rời nhóm</button></div>
+                    </div>
+                </div>
+            
+                <!-- QUAN TRỌNG: Script type="module" -->
+                <script type="module" src="main.js"></script>
+              </body>
+            </html>
